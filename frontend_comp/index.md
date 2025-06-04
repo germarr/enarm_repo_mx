@@ -341,6 +341,7 @@ let lineChartPromedios = linePromedios(average_per_year)
 
 
 ## Analisis por Escuela
+
 ```sql id=[total_escuelas_card]
 with base as (
   SELECT year, COUNT(DISTINCT school_id) factultades, COUNT(DISTINCT estado_id) as estado_id
@@ -375,6 +376,7 @@ from base
     </span>
   </div>
 </div>
+
 
 ```sql id=aceptacion_por_escuela
   WITH base as (
@@ -491,7 +493,8 @@ accept_school
 
 Escuela por escuela
 ```sql id=escuela_options
-SELECT DISTINCT facultad FROM enarm.enarm_results 
+SELECT DISTINCT facultad FROM enarm.enarm_results
+WHERE year = 2024 
 ORDER BY year DESC
 ```
 
@@ -501,7 +504,8 @@ let school_options_a = school_options.map(d => d.facultad)
 const search_escuela = view(Inputs.select(school_options_a));
 ```
 
-```sql id=[escuelas_con_el_promedio_mas_alto]
+
+```sql id=[escuelas_con_el_promedio_mas_alto]  
 WITH base AS (
   SELECT 
     facultad AS escuela, 
@@ -648,44 +652,198 @@ SELECT
 
 FROM base b
 LEFT JOIN medians m ON b.escuela = m.escuela
-WHERE b.year = 2024 AND b.escuela = ${search_escuela}
-ORDER BY b.promedio DESC;
+WHERE b.year IN (2024,2023) AND b.escuela = ${search_escuela}
+ORDER BY b.year DESC, b.promedio DESC;
 ```
 
 <div class="grid grid-cols-4">
   <div class="card">
     <h2>Promedio 2024</h2>
-    <span class="big">${escuelas_con_el_promedio_mas_alto.promedio.toLocaleString()}
+    <span class="big">${escuelas_con_el_promedio_mas_alto && escuelas_con_el_promedio_mas_alto.promedio !== undefined ? escuelas_con_el_promedio_mas_alto.promedio.toLocaleString() : 'N/A'}
     <span class="small">YoY: ${Trend(escuelas_con_el_promedio_mas_alto.growth_percentage)}</span>
     </span>
   </div>
   <div class="card">
     <h2>Sustentantes 2024</h2>
-    <span class="big">${escuelas_con_el_promedio_mas_alto.sustentante.toLocaleString()}
-    <span class="small">YoY: ${Trend(escuelas_con_el_promedio_mas_alto.growth_percentage_sustentante)} (${escuelas_con_el_promedio_mas_alto.sustentante_last_year.toLocaleString()})</span>
+    <span class="big">${escuelas_con_el_promedio_mas_alto.sustentante}
+    <span class="small">YoY: ${Trend(escuelas_con_el_promedio_mas_alto.growth_percentage_sustentante)} (${escuelas_con_el_promedio_mas_alto.sustentante_last_year})</span>
     </span>
   </div>
   <div class="card">
     <h2>Seleccionados 2024</h2>
-    <span class="big">${escuelas_con_el_promedio_mas_alto.seleccionado.toLocaleString()}
-    <span class="small">YoY: ${Trend(escuelas_con_el_promedio_mas_alto.growth_percentage_seleccionado)} (${escuelas_con_el_promedio_mas_alto.seleccionado_last_year.toLocaleString()})</span>
+    <span class="big">${escuelas_con_el_promedio_mas_alto.seleccionado}
+    <span class="small">YoY: ${Trend(escuelas_con_el_promedio_mas_alto.growth_percentage_seleccionado)} (${escuelas_con_el_promedio_mas_alto.seleccionado_last_year})</span>
     </span>
   </div>
   <div class="card">
     <h2>% de Aceptacion 2024</h2>
-    <span class="big">${escuelas_con_el_promedio_mas_alto.acceptance_rate.toLocaleString()}
-    <span class="small">YoY: ${Trend(escuelas_con_el_promedio_mas_alto.growth_percentage_acceptance_rate)} (${escuelas_con_el_promedio_mas_alto.acceptance_rate_last_year.toLocaleString()})</span>
+    <span class="big">${escuelas_con_el_promedio_mas_alto.acceptance_rate.toLocaleString() ? escuelas_con_el_promedio_mas_alto.acceptance_rate.toLocaleString() + '%' : 0 }
+    <span class="small">YoY: ${Trend(escuelas_con_el_promedio_mas_alto.growth_percentage_acceptance_rate)} (${escuelas_con_el_promedio_mas_alto.acceptance_rate_last_year.toLocaleString() ? escuelas_con_el_promedio_mas_alto.acceptance_rate_last_year.toLocaleString() + '%' : 0})</span>
     </span>
   </div>
 </div>
 
 
-
-```sql id=escuela_por_escuela
-SELECT * FROM enarm.enarm_results 
+```sql id=escuela_por_escuela 
+SELECT *
+EXCLUDE(acceptance_rate_plus_1_std,	acceptance_rate_minus_1_std, z_index	)
+FROM enarm.enarm_results 
 WHERE facultad = ${search_escuela}
 ORDER BY year DESC
 ```
+
+```sql id=scatter_for_school
+WITH avg_acc as (
+  SELECT AVG(acceptance_rate) as ar FROM enarm.enarm_results
+  WHERE year = 2024
+)
+SELECT year,facultad, school_id, sustentante,seleccionado, promedio, acceptance_rate,
+  CASE WHEN acceptance_rate >= (SELECT * FROM avg_acc) THEN 'arriba promedio'
+  ELSE 'abajo promedio' END AS stag
+FROM enarm.enarm_results
+WHERE year = 2024
+```
+
+```js
+let school_v_school = escuela_por_escuela.toArray()
+
+let stacked_passed_svs = school_v_school.flatMap(d=>[
+  {year:d.year, outcome:"Seleccionados", value:(d.seleccionado / d.sustentante)},
+  {year:d.year, outcome:"Sustentantes", value:1-(d.seleccionado / d.sustentante)}
+])
+
+function stacked_bar_svs(data,{width}={}){
+  return Plot.plot({
+    width: width,
+    height: 300,
+  marginLeft: 60,
+  marginBottom: 50,
+  marginTop: 40,
+  y: {percent: true, grid: true, label: "Acceptance Rate (%)"},
+  x:{type:'band', label:'Anio',tickRotate: -90},
+  color: {legend: true, label: "Outcome", scheme:"tableau10"},
+  marks: [
+    Plot.barY(data, {
+      x: "year",
+      y: "value",
+      fill: "outcome",
+      offset: "normalize",          // makes every bar 100 %
+      title: d => `${d.outcome}: ${d.value.toLocaleString()}`
+    }),
+    Plot.text(data, {
+        x: "year",
+        y: "value",
+        // Only display text for "Seleccionados" outcome
+        text: d => d.outcome === "Seleccionados" ? `${(d.value * 100).toFixed(2)}%` : "",
+        dy: 10 , // Adjust vertical position of the text slightly
+        fontSize: 10,
+        align: "center",
+      }),
+  ]
+})
+}
+
+let svs_ = resize((width) => stacked_bar_svs(stacked_passed_svs, {width: width}))
+```
+
+```js
+function linesvs(data, {width}={}){
+    return Plot.plot(
+    {
+        width: width,
+        height: 300,
+        marginLeft: 60,
+        marginBottom: 50,
+        marginTop: 40,
+        grid: true,
+        color:{
+            legend: true,
+            domain: ["Promedio"],
+            range: ["#ff8ab7"],
+            label: "Metrics"
+        },
+        x: {type: "band",label: "Date",tickRotate: -90},
+        marks:[
+        Plot.lineX(data, { x: "year", y: "promedio", stroke: "#ff8ab7", curve: "catmull-rom", marker: "circle", label:"Promedio"}),
+        Plot.text(data, {
+            x: "year",
+            y: "promedio",
+            text: d => d.promedio,
+            dy: -6, // Move label above the bar
+            fill: "white",
+            fontSize: 8,
+            textAnchor: "middle"
+        }),
+        Plot.text(
+          [{ y: d3.mean(data, d => d.promedio), label: "Promedio Escuela" }],
+          {
+            y: "y",
+            text: "label",
+            x: d3.max(data, d => d.year) - 1,
+            fill: "white",
+            fontSize: 10,
+            dy:-8
+          }
+        ),
+        Plot.ruleY([d3.max(data, d => d.promedio) + 1], {strokeOpacity: 0.01}),
+        Plot.ruleY([d3.mean(data, d => d.promedio)], {strokeOpacity: 1, strokeDasharray: "2"}),
+        Plot.ruleY([d3.min(data, d => d.promedio) - 1], {strokeOpacity: 0.01}),
+        ]
+    }
+)
+}
+
+
+let line_svs_ = resize((width) => linesvs(school_v_school, {width: width}))
+```
+
+```js
+const [awesomo] = await sql`SELECT * FROM enarm.enarm_results WHERE facultad = ${search_escuela} AND year = 2024`;
+```
+
+```js
+function scatterPlotsvs(data, {width, value1,value2,value3,value4,value5} = {}){
+  return Plot.plot({
+    width:width,
+    height:300,
+    marginLeft:60,
+    marginBottom:50,
+    marginTop:40,
+    color: { scheme: "tableau10", legend: true },
+    x:{label:"seleccionado", grid:true},
+    y:{label:"promedio", grid:true},
+    marks:[
+      Plot.ruleY([d3.mean(data, d => d.promedio)], { stroke: "orange", strokeDasharray: "4,2", label: "Promedio promedio" }),  
+        
+      Plot.dot(data,{x:'seleccionado', y:'promedio', stroke: "stag", opacity:0.5}),
+      
+      Plot.dot([{y: value1, x: value2, stag: "escuela"}], {x: 'x', y: 'y', stroke: "stag", opacity: 1, fill: "stag"}),
+      
+      Plot.tip([`${value3}\n\nSeleccionado: ${value2}\nSustentante: ${value4}\nPromedio: ${value5}`],{y:value1,x:value2, anchor:"left", dx:5, fontSize:8, fill:"black", textAnchor:"middle", labelAnchor:"middle", labelOffset:10, labelFontSize:12, labelFill:"black", labelTextAlign:"center", labelTextBaseline:"middle", labelPadding:5}),
+    ]
+  })
+}
+
+let scattersvs = resize((width) => scatterPlotsvs(scatter_for_school, {width: width, value1: awesomo.promedio, value2: awesomo.seleccionado, value3: awesomo.facultad, value4: awesomo.sustentante, value5: awesomo.promedio}));
+```
+
+
+${awesomo.promedio} - ${awesomo.sustentante}
+
+<div class="grid grid-cols-3">
+    <div class="card">
+        <h2>Seleccionados vs Sustentantes</h2>
+        <span>${svs_}</span>
+    </div>
+    <div class="card">
+        <h2>Promedio por Anio</h2>
+        <span>${line_svs_}</span>
+    </div>
+    <div class="card">
+        <h2>Seleccionados vs Promedio</h2>
+        <span>${scattersvs}</span>
+    </div>
+</div>
 
 
 ```sql id=escuelas_el_anio_pasado
@@ -753,7 +911,6 @@ where especialidad_id ='otorrinolaringologia_y_cirugia_de_cabeza_y_cuello'
 order by year desc
 ```
 
-
 ```sql id=cirugia_general
   SELECT especialidad_id,year, 
   puntaje_min,puntaje_max, avg_puntaje_min,std_puntaje_min_plus_1,std_puntaje_min_minus_1
@@ -773,7 +930,6 @@ order by year desc
 SELECT DISTINCT especialidad_id
 FROM enarm.enarm_min_max
 ```
-
 
 ```sql id=ahcaray
 SELECT DISTINCT especialidad_id, 
@@ -1123,8 +1279,6 @@ function scatterPlot1(data, {width} = {}){
   })
 }
 ```
-
-
 
 ```js
 let scatter_data = scatter_results.toArray()
