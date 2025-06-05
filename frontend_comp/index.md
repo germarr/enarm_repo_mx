@@ -824,10 +824,305 @@ FROM sustentates -->
 </div>
 
 Escuela por escuela
+```sql id=escuela_por_escuela1 
+WITH base as (SELECT year, AVG(promedio) global_avg
+FROM enarm.enarm_results 
+GROUP BY year
+ORDER BY year DESC), total_avg as (
+    SELECT AVG(global_avg) as total_avg
+    FROM base
+), second_f as (FROM base, total_avg)
+
+
+SELECT er.*
+EXCLUDE(acceptance_rate_plus_1_std,	acceptance_rate_minus_1_std, z_index), sd.global_avg, sd.total_avg
+FROM enarm.enarm_results as er
+LEFT JOIN second_f as sd ON er.year = sd.year
+WHERE er.facultad = ${search_escuela}
+ORDER BY er.year DESC
+```
+
+```js
+function promediosustentantes(data, {width}={}){
+    return Plot.plot({
+        width: width,
+        marginLeft: 60,
+        marginBottom: 50,
+        marginTop: 40,
+        grid:true,
+        y: {
+            label: "Sustentantes",
+        },
+        x: {
+            type: "band",
+            label: "Date",
+            tickRotate: -90 
+        },
+        marks:[
+            Plot.lineY(data, { 
+            x: (d) => d.year, 
+            y: d3.mean(data, d => d.sustentante), 
+            stroke: "white", 
+            curve: "catmull-rom",
+            strokeDasharray: "6",
+            label:"Promedio Escuela"}
+            ),
+            Plot.barY(data, { 
+            x: (d) => d.year, 
+            y: (d) => d.sustentante,
+            dx: 2, dy: 2,
+            stroke: "#ff8ab7",  
+            label:"Sustentante"}
+            ),
+            Plot.text(
+                [{ 
+                    y: d3.mean(data, d => d.sustentante), 
+                    label: "Promedio Sustentantes Historico",
+                    x: d3.min(data, d => d.year) // place at first x value
+                }],
+                {
+                    y: "y",
+                    text: "label",
+                    x: "x",
+                    fill: "white",
+                    fontSize: 10,
+                    dy: -8,
+                    dx: 50 // move right from the axis
+                }
+            ),
+            Plot.text(data, {
+                x: (d) => d.year, 
+                y: (d) => d.sustentante, 
+                text: d => d.sustentante,
+                dy: -6, // Move label above the bar
+                fill: "white",
+                fontSize: 8,
+                textAnchor: "middle"
+            }),
+        ]
+    })
+}
+
+function promedioseleccionado(data, {width}={}){
+    return Plot.plot({
+        width: width,
+        marginLeft: 60,
+        marginBottom: 50,
+        marginTop: 40,
+        grid:true,
+        y: {
+            label: "Seleccionados",
+        },
+        x: {
+            type: "band",
+            label: "Date",
+            tickRotate: -90 
+        },
+        marks:[
+            Plot.lineY(data, { 
+            x: (d) => d.year, 
+            y: d3.mean(data, d => d.seleccionado), 
+            stroke: "white", 
+            curve: "catmull-rom",
+            strokeDasharray: "6",
+            label:"Promedio Escuela"}
+            ),
+            Plot.barY(data, { 
+            x: (d) => d.year, 
+            y: (d) => d.seleccionado,
+            dx: 2, dy: 2,
+            stroke: "#ff8ab7",  
+            label:"Sustentante"}
+            ),
+            Plot.text(
+                [{ 
+                    y: d3.mean(data, d => d.seleccionado), 
+                    label: "Promedio Sustentantes Historico",
+                    x: d3.min(data, d => d.year) // place at first x value
+                }],
+                {
+                    y: "y",
+                    text: "label",
+                    x: "x",
+                    fill: "white",
+                    fontSize: 10,
+                    dy: -8,
+                    dx: 50 // move right from the axis
+                }
+            ),
+            Plot.text(data, {
+                x: (d) => d.year, 
+                y: (d) => d.seleccionado, 
+                text: d => d.seleccionado,
+                dy: -6, // Move label above the bar
+                fill: "white",
+                fontSize: 8,
+                textAnchor: "middle"
+            }),
+        ]
+    })
+}
+
+function promedioporescuela(data, {width}={}){
+    return Plot.plot({
+        width: width,
+        height:300,
+        marginLeft: 60,
+        marginBottom: 50,
+        marginTop: 40,
+        grid:true,
+        y:{label:'Promedio'},
+        x: {
+            type: "band",
+            label: "Date",
+            tickRotate: -90 
+        },
+        marks:[
+            Plot.lineY(data, { 
+                x: (d) => d.year, 
+                y: (d) => d.promedio, 
+                stroke: "#ff8ab7", 
+                curve: "catmull-rom", 
+                marker: "circle", 
+                label:"Promedio"}
+            ),
+            Plot.text(data, {
+                x: (d) => d.year, 
+                y: (d) => d.promedio, 
+                text: d => d.promedio,
+                dy: -6, // Move label above the bar
+                fill: "white",
+                fontSize: 8,
+                textAnchor: "middle"
+            }),
+            Plot.lineY(data, { 
+                x: (d) => d.year, 
+                y: (d) => d.global_avg, 
+                stroke: "white", 
+                curve: "catmull-rom",
+                strokeOpacity: 0.4,
+                strokeDasharray: "3",
+                label:"Promedio Global"}
+            ),
+            Plot.lineY(data, { 
+                x: (d) => d.year, 
+                y: (d) => d.total_avg, 
+                stroke: "white", 
+                curve: "catmull-rom",
+                strokeDasharray: "6",
+                strokeOpacity: 0.5,
+                label:"Promedio Global"}
+            ),   
+            Plot.lineY(data, { 
+                x: (d) => d.year, 
+                y: d3.mean(data, d => d.promedio), 
+                stroke: "#ff8ab7", 
+                curve: "catmull-rom",
+                strokeDasharray: "6",
+                strokeOpacity: 0.5,
+                label:"Promedio Escuela"}
+            ),
+            Plot.text(
+                [{ y: d3.mean(data, d => d.total_avg), label: "Promedio Global Historico" }],
+                {
+                    y: "y",
+                    text: "label",
+                    x: d3.max(data, d => d.year) - 1,
+                    fill: "white",
+                    fontSize: 10,
+                    dy:-8,
+                    dx:-15
+                }
+            ),
+            Plot.text(
+                [{ y: d3.mean(data, d => d.promedio), label: "Promedio Escuela Historico" }],
+                {
+                    y: "y",
+                    text: "label",
+                    x: d3.max(data, d => d.year) - 1,
+                    fill: "#ff8ab7",
+                    fontSize: 10,
+                    dy:-8,
+                    dx:-15
+                }
+            ),
+        ]
+    })
+}
+
+function promedioseleccionado20(data, {width}={}) {
+    // Calculate means for lines
+    const meanSeleccionado = d3.mean(data, d => d.seleccionado);
+    const meanSustentante = d3.mean(data, d => d.sustentante);
+    
+    let card_student = data.toArray()
+    
+    // 2. Unpivot (melt) the data so that each object has { year, category, value }:
+  let longData = card_student.flatMap(d => [
+    { year: d.year, category: "Sustentantes", value: d.sustentante },
+    { year: d.year, category: "Seleccionados", value: d.seleccionado },
+  ]);
+
+  let keys = d3.sort(new Set(longData.map(d=>d.category)))
+    
+    return Plot.plot({
+        width: width,
+        height:300,
+        marginLeft: 60,
+        marginBottom: 50,
+        marginTop: 40,
+        grid: true,
+        y: {
+            label: "Seleccionados / Sustentantes",
+            tickFormat:'s',
+            nice:true,
+            grid:true
+        },
+        x: {label: "Date",axis:null},
+        color: {
+            legend: true,
+            schema:"spectral"
+        },
+        marks: [
+            Plot.barY(longData,{
+                x:"category",
+                y:"value",
+                fill:"category",
+                fx:"year"
+            }),
+            Plot.ruleY([0]),
+            Plot.ruleY([meanSustentante], {
+                    stroke: "white",
+                    strokeWidth: 1,
+                    strokeDasharray: "4,2"
+                }),
+            Plot.ruleY([meanSeleccionado], {
+                    stroke: "white",
+                    strokeWidth: 1,
+                    strokeDasharray: "4,2"
+                }),
+
+    // 3) Add text labels right above each bar
+    Plot.text(longData, {
+      x: "category",
+      y: "value",          // position at the top of each bar
+      text: "value",       // display the numeric “value” field
+      fx: "year",          // keep faceting by year
+      dy: -8,              // nudge text 4px upward so it sits above the bar
+      fill: "white",       // label color
+      fontSize: 10,        // shrink font a bit if needed
+      textAnchor: "middle" // center the number horizontally on each bar
+    })
+            
+        ]
+    })
+}
+```
+
 ```sql id=escuela_options
 SELECT DISTINCT facultad FROM enarm.enarm_results
 WHERE year = 2024 
-ORDER BY year DESC
+ORDER BY facultad ASC
 ```
 
 ```js
@@ -1162,19 +1457,26 @@ function scatterPlotsvs(data, {width, value1,value2,value3,value4,value5} = {}){
 let scattersvs = resize((width) => scatterPlotsvs(scatter_for_school, {width: width, value1: awesomo.promedio, value2: awesomo.seleccionado, value3: awesomo.facultad, value4: awesomo.sustentante, value5: awesomo.promedio}));
 ```
 
+<div class="grid grid-cols-4 gap-4">
+  <div class="card" style="grid-column: span 2;">
+    <h2>Seleccionados vs Sustentantes</h2>
+    <span>${svs_}</span>
+  </div>
+  <div class="card" style="grid-column: span 2;">
+    <h2>Promedio por Anio</h2>
+    <span>${resize((width)=>promedioporescuela(escuela_por_escuela1,{width:width}))}</span>
+  </div>
+</div>
+
 <div class="grid grid-cols-3">
-    <div class="card">
-        <h2>Seleccionados vs Sustentantes</h2>
-        <span>${svs_}</span>
-    </div>
-    <div class="card">
-        <h2>Promedio por Anio</h2>
-        <span>${line_svs_}</span>
-    </div>
-    <div class="card">
-        <h2>Seleccionados vs Promedio</h2>
-        <span>${scattersvs}</span>
-    </div>
+  <div class="card" style="grid-column: span 1;">
+    <h2>Seleccionados vs Promedio</h2>
+    <span>${scattersvs}</span>
+  </div>
+  <div class="card" style="grid-column: span 2;">
+    <h2>Seleccionados / Sutentatnes YoY</h2>
+    <span>${resize((width)=>promedioseleccionado20(escuela_por_escuela1,{width:width}))}</span>
+  </div>
 </div>
 
 
@@ -1261,6 +1563,7 @@ order by year desc
 ```sql id=specialties
 SELECT DISTINCT especialidad_id
 FROM enarm.enarm_min_max
+order by especialidad_id asc
 ```
 
 ```sql id=ahcaray
@@ -1391,7 +1694,7 @@ let info_special_table = Inputs.table(
 <div class="grid grid-cols-2">
   <div class='card'>
     ${info_special_table}
-  </div>
+  </div>es
 </div>
 
 **Selecciona una especialidad:**
