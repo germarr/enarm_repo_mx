@@ -15,6 +15,267 @@ import {BarChart} from "./components/barChart.js";
 
 La escuela nacional de medicina y ciencias de la salud "Salvador Zubirán" (ENARM) es un examen que evalúa los conocimientos médicos de los aspirantes a residencias médicas en México. Este examen es altamente competitivo y se lleva a cabo anualmente. Los resultados del ENARM son cruciales para determinar la asignación de plazas en las diferentes especialidades médicas.
 
+```sql id=aceptacion_por_escuela1
+WITH base as (
+    FROM enarm.enarm_results
+    WHERE acceptance_rate < 100
+),
+newbase as (
+    SELECT year,facultad, acceptance_rate,
+RANK() OVER(PARTITION BY year ORDER BY acceptance_rate DESC,facultad DESC) AS rank
+FROM base)
+
+FROM newbase WHERE rank = 1 ORDER BY year DESC
+```
+
+```sql id=promedio_top 
+WITH base as (
+    FROM enarm.enarm_results
+),
+newbase as (
+    SELECT year,facultad, promedio,
+RANK() OVER(PARTITION BY year ORDER BY promedio DESC,facultad DESC) AS rank
+FROM base)
+
+FROM newbase WHERE rank = 1 ORDER BY year DESC
+```
+
+```sql id=cohort 
+WITH base as (SELECT school_id,facultad,
+MAX(sustentante) AS sustentante
+FROM enarm.enarm_results
+GROUP BY  school_id,facultad),
+cohort as (SELECT school_id,facultad, COUNT(*) AS num_schools, 
+    MIN(sustentante) AS min_sustentante, 
+    MAX(sustentante) AS max_sustentante,
+    CASE 
+      WHEN sustentante < 100 THEN '1 - Muy pequeña (<100)'
+      WHEN sustentante < 300 THEN '2- Pequeña (100-299)'
+      WHEN sustentante < 600 THEN '3 - Mediana (300-599)'
+      WHEN sustentante < 1000 THEN '4 - Grande (600-999)'
+      ELSE '5 - Muy grande (1000+)'
+    END AS cohort
+FROM base
+GROUP BY school_id, cohort, facultad
+ORDER BY MAX(sustentante) DESC, cohort), 
+cohort_table as (
+    SELECT school_id, cohort FROM cohort
+), metrics_pow as (
+SELECT br.school_id,br.year, br.sustentante,br.seleccionado,br.promedio,br.acceptance_rate,cohort_table.cohort
+FROM enarm.enarm_results as br
+LEFT JOIN cohort_table ON br.school_id = cohort_table.school_id
+), selec_per_yr as(
+    SELECT year, SUM(seleccionado) as selecti from metrics_pow
+GROUP BY year
+)
+
+SELECT 
+    metrics_pow.year,
+    cohort,
+    AVG(promedio) AS promedio,
+    MEDIAN(promedio) AS promedio_median,
+    AVG(acceptance_rate) AS acceptance_rate,
+    COUNT(school_id) as schools,
+    SUM(seleccionado)::FLOAT AS seleccionado,
+    SUM(sustentante)::FLOAT as sustentante,
+    selecti::FLOAT AS seleccionados_por_ano
+FROM metrics_pow
+LEFT JOIN selec_per_yr ON metrics_pow.year = selec_per_yr.year
+GROUP BY metrics_pow.year,cohort, selecti
+ORDER BY  metrics_pow.year,cohort ASC
+```
+
+```js
+let kkr = aceptacion_por_escuela1.toArray()
+let kkr2 = promedio_top.toArray()
+
+function barChart1(data, { width } = {}) {
+  return Plot.plot({
+    width: width,
+    height: 280,
+    marginLeft: 60,
+    x: { label: "Acceptance Rate (%)" },
+    y: { type: 'band', label: 'Año', tickRotate: 0 },
+    color: {
+      legend: true,
+      domain: ["Acceptance Rate"],
+      range: ["#1f77b4"]
+    },
+    marks: [
+      Plot.barX(data, {
+        y: "year",
+        x: "acceptance_rate",
+        fill: "#1f77b4"
+      }),
+      Plot.text(data, {
+        y: "year",
+        x: "acceptance_rate",
+        text: d => d.facultad,
+        fill: "white",
+        fontSize: 8.5,
+        fontWeight: "bold",
+        textAnchor: "end",
+        dx: -20,
+        rotate: 0 // No rotation for horizontal
+      }),
+      Plot.text(data, {
+        y: "year",
+        x: "acceptance_rate",
+        text: d => d.acceptance_rate,
+        dx: 5,
+        fill: "white",
+        fontSize: 8,
+        fontWeight: "bold",
+        textAnchor: "start",
+      }),
+    ]
+  });
+}
+
+function barChart2(data, { width } = {}) {
+  return Plot.plot({
+    width: width,
+    height: 280,
+    marginLeft: 60,
+    x: { label: "Promedio" },
+    y: { type: 'band', label: 'Año', tickRotate: 0 },
+    color: {
+      legend: true,
+      domain: ["Promedio"],
+      range: ["#701e42"]
+    },
+    marks: [
+      Plot.barX(data, {
+        y: "year",
+        x: "promedio",
+        fill: "#701e42"
+      }),
+      Plot.text(data, {
+        y: "year",
+        x: "promedio",
+        text: d => d.facultad,
+        fill: "white",
+        fontSize: 10,
+        textAnchor: "end",
+        dx:-20,
+        rotate: 0 // No rotation for horizontal
+      }),
+      Plot.text(data, {
+        y: "year",
+        x: "promedio",
+        text: d => d.promedio,
+        dx: 5,
+        fill: "white",
+        fontSize: 8,
+        fontWeight: "bold",
+        textAnchor: "start",
+      }),
+    ]
+  });
+}
+
+function scatterSimple(data, {width}={}) {
+    return Plot.plot({
+        width: width,
+        height: 400,
+        marginLeft: 60,
+        marginBottom: 50,
+        marginTop: 40,
+        x: { label: "Year", type: 'point' },
+        y: { label: "% de Aceptacion" },
+        color: { legend: true, scheme: 'tableau10' },
+        marks: [
+            Plot.lineY(data, {
+                x: d => d.year,
+                y: d => d.promedio,
+                stroke: d => d.cohort,
+                curve: "catmull-rom",
+            }),
+            Plot.dot(data, {
+                x: d => d.year,
+                y: d => d.promedio,
+                fill: d => d.cohort,
+                r: 3
+            }),
+            Plot.text(data, {
+                x: d => d.year,
+                y: d => d.promedio,
+                text: d => d.promedio,
+                dy: -10,
+                fill: "white",
+                fontSize: 10,
+                lineAnchor: "top"
+            })
+        ]
+    })
+}
+
+function stackedBar100(data, {width} = {}) {
+    // Group data by year and cohort, sum seleccionado
+    let grouped = d3.rollups(
+        data,
+        v => d3.sum(v, d => d.seleccionado),
+        d => d.year,
+        d => d.cohort
+    );
+    // Convert to array of objects: {year, cohort, seleccionado}
+    let flat = [];
+    for (let [year, cohorts] of grouped) {
+        for (let [cohort, seleccionado] of cohorts) {
+            flat.push({ year, cohort, seleccionado });
+        }
+    }
+    // Compute total seleccionado per year for 100% stacking
+    let totals = d3.rollup(flat, v => d3.sum(v, d => d.seleccionado), d => d.year);
+    flat.forEach(d => d.percent = d.seleccionado / totals.get(d.year));
+
+    return Plot.plot({
+        width,
+        height: 400,
+        marginLeft: 60,
+        marginBottom: 50,
+        marginTop: 40,
+        x: { type: "band", label: "Año", tickRotate: -90 },
+        y: { label: "% Seleccionados", percent: true },
+        color: { legend: true, scheme: "tableau10", label: "Cohorte" },
+        marks: [
+            Plot.barY(flat, {
+                x: "year",
+                y: "percent",
+                fill: "cohort",
+                order: "cohort",
+                offset: "normalize"
+            }),
+            Plot.text(flat, {
+                x: "year",
+                y: (d, i, data) => {
+                    // Compute the middle of the stacked bar segment for label placement
+                    let year = d.year;
+                    let cohort = d.cohort;
+                    // Get all cohorts for this year, sorted by order
+                    let cohorts = flat.filter(e => e.year === year);
+                    let order = cohorts.map(e => e.cohort);
+                    let idx = order.indexOf(cohort);
+                    // Sum percent up to this cohort for stacking
+                    let y0 = 0;
+                    for (let j = 0; j < idx; ++j) y0 += cohorts[j].percent;
+                    // Place text at the middle of the segment
+                    return y0 + d.percent / 2;
+                },
+                text: d => (d.percent * 100).toFixed(1) + "%",
+                fill: "white",
+                fontSize: 10,
+                textAnchor: "middle",
+                dy: 0
+            })
+        ]
+    });
+}
+
+let barC = resize((width)=>barChart1(kkr, {width:width}))
+let barC1 = resize((width)=>barChart2(kkr2, {width:width}))
+```
+
 ```sql id=promedio_por_anio
 WITH date_summary AS (
     SELECT 
@@ -339,7 +600,6 @@ let lineChartPromedios = linePromedios(average_per_year)
   </div>
 </div>
 
-
 ## Analisis por Escuela
 
 ```sql id=[total_escuelas_card]
@@ -395,7 +655,7 @@ from base
   ORDER BY acceptance_rate DESC
   ```
 
-```sql id=escuelas_acept_mas_alto
+```sql id=escuelas_acept_mas_alto 
   with base as (SELECT year, facultad as escuela, seleccionado,
   LAG(seleccionado,-1) OVER (PARTITION BY facultad ORDER BY year DESC) as yoy,
   acceptance_rate
@@ -410,7 +670,7 @@ from base
     FROM base WHERE year = 2024
 ```
 
-```sql id=more_schools_data
+```sql id=more_schools_data 
 WITH base AS (
   SELECT 
   facultad as escuela, 
@@ -484,12 +744,84 @@ display(choosedSpeciality)
 <!-- ```js
 accept_school
 ``` -->
+
+```sql id=[dummary_sc]
+  WITH base as (
+    SELECT year, facultad as escuela, acceptance_rate,
+    LAG(acceptance_rate, -1) OVER (PARTITION BY facultad ORDER BY year DESC) as yoy_acceptance_rate
+    FROM enarm.enarm_results
+    ORDER BY acceptance_rate DESC 
+  ),
+  seleccionado as (
+    SELECT year, facultad as escuela, seleccionado,
+    LAG(seleccionado, -1) OVER (PARTITION BY facultad ORDER BY year DESC) as yoy_seleccionado
+    FROM enarm.enarm_results
+    ORDER BY seleccionado DESC 
+  ),
+  promedio as (
+    SELECT year, facultad as escuela, promedio,
+    LAG(promedio, -1) OVER (PARTITION BY facultad ORDER BY year DESC) as yoy_promedio
+    FROM enarm.enarm_results
+    ORDER BY promedio DESC 
+  )
+
+
+SELECT (SELECT escuela FROM base WHERE year = 2024 LIMIT 1) as accept_school, (SELECT acceptance_rate FROM base WHERE year = 2024 LIMIT 1) acceptance_rate, (SELECT escuela FROM seleccionado WHERE year = 2024 LIMIT 1) seleccionado_escuela, (SELECT seleccionado FROM seleccionado WHERE year = 2024 LIMIT 1) seleccionado,(SELECT escuela FROM promedio WHERE year = 2024 LIMIT 1) promedio_escuela, (SELECT promedio FROM promedio WHERE year = 2024 LIMIT 1) promedio,
+
+```
+
+<!-- SELECT (SELECT ld FROM sustentates) as mas_alumnos
+FROM sustentates -->
+
 <div class="grid grid-cols-2">
   <div class="card"><h2>% de Aceptacion 2024</h2><br>${accept_school}</div>
   <div class="card"><h2>Total Seleccionados 2024</h2><br>${accept_school_mas_alto}</div>
   <div class="card"><h2>Promedio por Escuela 2024</h2><br>${more_schools_table}</div>
+  <div class="card">
+    <h2>En corto</h2>
+    <ul>
+      <li>% de aceptacion mas alto: ${dummary_sc.accept_school} (${dummary_sc.acceptance_rate})</li>
+      <br>
+      <li>Mas alumnos aceptados: ${dummary_sc.seleccionado_escuela} (${dummary_sc.seleccionado.toLocaleString()})</li>
+      <br>
+      <li>Promedio de calificacion mas alta: ${dummary_sc.promedio_escuela} (${dummary_sc.promedio.toLocaleString()})</li>
+  </div>
 </div>
 
+
+<div class="grid grid-cols-3">
+    <div class="card">
+        <h2 style="font-weight:bold;">Escuela con mejor % de aceptacion</h2>
+        <br>
+        <span>
+        ${barC}
+        </span>
+    </div>
+    <div class="card">
+        <h2 style="font-weight:bold;">Escuela con mejor promedio</h2>
+        <br>
+        <span>
+        ${barC1}
+        </span>
+    </div>
+</div>
+
+<div class="grid grid-cols-2">
+    <div class="card">
+        <h2 style="font-weight:bold;">Seleccionados por tamano de escuela</h2>
+        <br>
+        <span>
+        ${resize((width)=>stackedBar100(cohort, {width:width}))}
+        </span>
+    </div>
+    <div class="card">
+        <h2 style="font-weight:bold;">Promedio por tamano de escuela</h2>
+        <br>
+        <span>
+        ${resize((width)=>scatterSimple(cohort, {width:width}))}
+        </span>
+    </div>
+</div>
 
 Escuela por escuela
 ```sql id=escuela_options
@@ -827,9 +1159,6 @@ function scatterPlotsvs(data, {width, value1,value2,value3,value4,value5} = {}){
 let scattersvs = resize((width) => scatterPlotsvs(scatter_for_school, {width: width, value1: awesomo.promedio, value2: awesomo.seleccionado, value3: awesomo.facultad, value4: awesomo.sustentante, value5: awesomo.promedio}));
 ```
 
-
-${awesomo.promedio} - ${awesomo.sustentante}
-
 <div class="grid grid-cols-3">
     <div class="card">
         <h2>Seleccionados vs Sustentantes</h2>
@@ -1107,6 +1436,7 @@ From base
   </div>
 </div>
 
+
 ```js
 let listOfSpecialties = specialties.toArray()
 
@@ -1215,7 +1545,7 @@ function EnarmMinScorePlot(data,dsb, { title = "Puntaje Mínimo ENARM", ...optio
 EnarmMinScorePlot(rrr[0]["data"], rrr[0]["baseline"])
 ```
 
-```sql id=scatter_results display
+```sql id=scatter_results 
 WITH avg_acc as (
   SELECT AVG(acceptance_rate) as ar FROM enarm.enarm_results
   WHERE year = 2024
@@ -1240,9 +1570,12 @@ function scatterPlot(data, {width} = {}){
     x:{label:"seleccionado", grid:true},
     y:{label:"promedio", grid:true},
     marks:[
-      Plot.ruleY([d3.mean(data, d => d.promedio)], { stroke: "orange", strokeDasharray: "4,2", label: "Promedio promedio" }),    
+      Plot.ruleY([d3.mean(data, d => d.promedio)], { stroke: "orange", strokeDasharray: "4,2", label: "Promedio promedio" }), 
+
       Plot.dot(data,{x:'seleccionado', y:'promedio', stroke: "stag"}),
+
       // Plot.tip([`UNAM\n\nSustentantes: `],{y:57.923,x:1202, anchor:"bottom"}),
+
       Plot.tip(data, Plot.pointer({
         x:'seleccionado',
         y:'promedio',
