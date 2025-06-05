@@ -1716,6 +1716,10 @@ WHERE year IN ('2024.csv','2023.csv','2022.csv','2021.csv')
 
 ```js
 function scatterMedicine(data, {width} = {}){
+  
+    // 1. Compute the means
+    const meanMin = d3.mean(data, d => d.puntaje_min);
+    const meanMax = d3.mean(data, d => d.puntaje_max);
 
     return Plot.plot({
         width: width,
@@ -1743,7 +1747,25 @@ function scatterMedicine(data, {width} = {}){
                 x: (d)=>d.puntaje_min,
                 y: (d)=>d.puntaje_max,
                 title: (d) => `Especialidad: ${d.especialidad_id}\n\nYear: ${d.year}\nPuntaje Max: ${d.puntaje_max.toFixed(2)}\nPuntaje Min: ${d.puntaje_min.toFixed(2)}`
-            }))
+            })),
+
+      // 4. Vertical line at x = mean(puntaje_min)
+      Plot.ruleX([meanMin], {
+        stroke: "white",
+        strokeWidth: 1,
+        strokeDasharray: "4,2",    // dashed line; omit or change if you prefer solid
+        title: `Mean Puntaje Min: ${meanMin.toFixed(2)}`,
+        strokeOpacity: 0.6
+      }),
+
+      // 5. Horizontal line at y = mean(puntaje_max)
+      Plot.ruleY([meanMax], {
+        stroke: "white",
+        strokeWidth: 1,
+        strokeDasharray: "4,2",
+        title: `Mean Puntaje Max: ${meanMax.toFixed(2)}`,
+        strokeOpacity: 0.6
+      })
         ]
     })
 }
