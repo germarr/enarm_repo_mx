@@ -1,6 +1,6 @@
 ---
 theme: dashboard
-title: ENARM RESULTS RESEARCh
+title: Resultados ENARM
 toc: false
 sql:
   enarm: ./data/enarm.duckdb
@@ -1044,7 +1044,8 @@ let stacked_passed_svs = school_v_school.flatMap(d=>[
   {year:d.year, outcome:"Sustentantes", value:1-(d.seleccionado / d.sustentante)}
 ])
 
-function stacked_bar_svs(data,{width}={}){
+function stacked_bar_svs(data,{width}={})
+{
   return Plot.plot({
     width: width,
     height: 300,
@@ -1069,7 +1070,9 @@ function stacked_bar_svs(data,{width}={}){
         text: d => d.outcome === "Seleccionados" ? `${(d.value * 100).toFixed(2)}%` : "",
         dy: 10 , // Adjust vertical position of the text slightly
         fontSize: 10,
-        align: "center",
+        textAnchor: "middle",
+        fontWeight:'bold',
+        rotate:0
       }),
   ]
 })
@@ -1347,17 +1350,51 @@ const [patatas] = await sql`SELECT COUNT(*) as s FROM enarm.enarm_min_max WHERE 
   </div>
   <div class="card">
     <h2>Promedio Puntaje Alto</h2>
-    <span style="font-weight:bold; font-size:18px" class="">${minmax_year_min_max.puntaje_max.toLocaleString()}
+    <span class="big">${minmax_year_min_max.puntaje_max.toLocaleString()}
     <span class="small">YoY: ${Trend(minmax_year_min_max.last_yr_puntaje_max.toLocaleString())}</span>
   </div>
   <div class="card">
     <h2>Promedio Puntaje Bajo</h2>
-    <span style="font-weight:bold; font-size:18px" class="">${minmax_year_min_max.puntaje_min.toLocaleString()}
+    <span class="big">${minmax_year_min_max.puntaje_min.toLocaleString()}
     <span class="small">YoY: ${Trend(minmax_year_min_max.last_yr_puntaje_min.toLocaleString())}</span>
   </div>
 </div>
 
-Selecciona una especialidad:
+```sql id=info_per_special
+WITH base as (
+  SELECT especialidad_id, REPLACE(year, '.csv', '') AS year, puntaje_min, puntaje_max, diff,
+LAG(diff, -1) OVER (partition by especialidad_id order by year DESC) ly_diff
+FROM enarm.enarm_min_max 
+WHERE year IN ('2024.csv', '2023.csv')
+ORDER BY year DESC
+)
+SELECT * EXCLUDE(puntaje_min, puntaje_max),
+diff - ly_diff as diff_ordinal, ROUND((((diff - ly_diff) / ly_diff) * 100),2) as pct
+FROM base WHERE year = 2024
+ORDER BY diff ASC
+```
+
+```js
+let info_special_table = Inputs.table(
+  info_per_special,
+  {
+    //columns:["escuela","acceptance_rate"],
+    //header:{escuela:"Escuela",acceptance_rate:"% de aceptacion"},
+    width:{especialidad_id:300},
+    rows: 5,
+    multiple: false,
+    select:false
+  }
+) 
+```
+
+<div class="grid grid-cols-2">
+  <div class='card'>
+    ${info_special_table}
+  </div>
+</div>
+
+**Selecciona una especialidad:**
 ```js
 let sp_input = specialties.toArray()
 
@@ -1366,9 +1403,53 @@ let ktp = sp_input.map(d => d.especialidad_id);
 const speciality = view(Inputs.select(ktp, {value: "oftalmologia", label: "Especialidad"}));
 ```
 
+```sql id=mmm
+SELECT 
+    REPLACE(year, '.csv', '') AS year,
+    *
+FROM enarm.enarm_min_max
+WHERE year IN ('2024.csv','2023.csv','2022.csv','2021.csv')
+```
+
+```js
+function scatterMedicine(data, {width} = {}){
+
+    return Plot.plot({
+        width: width,
+        marginLeft: 60,
+        marginBottom: 50,
+        marginTop: 40,
+        color: { scheme: "tableau10", legend: true, type:'ordinal'},
+        x: { label: "Puntaje Min", grid: true},
+        y: { label: "Puntaje Max", grid: true },
+        marks: [
+            Plot.dot(data, {
+                x: (d)=>d.puntaje_min,
+                y: (d)=>d.puntaje_max,
+                fill: (d) => d.year,
+                r: (d)=> d.especialidad_id === `${speciality}` ? 5 : 1,
+                fillOpacity: d => 
+                    (d.year === "2020" && d.especialidad_id !== `${speciality}`) ? 0.5 :
+                    (d.year === "2019" && d.especialidad_id !== `${speciality}`) ? 0.5 :
+                    (d.year === "2024" && d.especialidad_id !== `${speciality}`) ? 0.5 :
+                    (d.year === "2021" && d.especialidad_id !== `${speciality}`) ? 0.5 :
+                    (d.year === "2022" && d.especialidad_id !== `${speciality}`) ? 0.5 :
+                    (d.year === "2023" && d.especialidad_id !== `${speciality}`) ? 0.5 : 1
+            }),
+            Plot.tip(data, Plot.pointer({
+                x: (d)=>d.puntaje_min,
+                y: (d)=>d.puntaje_max,
+                title: (d) => `Especialidad: ${d.especialidad_id}\n\nYear: ${d.year}\nPuntaje Max: ${d.puntaje_max.toFixed(2)}\nPuntaje Min: ${d.puntaje_min.toFixed(2)}`
+            }))
+        ]
+    })
+}
+```
+
 <!-- ```js
 const selection = view(Inputs.table(ahcaray, {required: false}));
 ``` -->
+
 
 <!-- ```js
 let pickOfSpeciality = selection[0]
@@ -1392,7 +1473,7 @@ display(choosedSpeciality)
   order by year desc
 ```
 
-```sql id=[all_results_minmax] display
+```sql id=[all_results_minmax] 
 WITH base as (  SELECT year,ROUND(puntaje_min,2) as puntaje_min,
   LAG(puntaje_min,-1) OVER (ORDER BY year DESC) as last_yr_min,
   ROUND(puntaje_max,2) puntaje_max,
@@ -1541,9 +1622,17 @@ function EnarmMinScorePlot(data,dsb, { title = "Puntaje Mínimo ENARM", ...optio
 }
 ```
 
-```js
-EnarmMinScorePlot(rrr[0]["data"], rrr[0]["baseline"])
-```
+
+<div class="grid grid-cols-2">
+  <div class="card">
+    ${EnarmMinScorePlot(rrr[0]["data"], rrr[0]["baseline"])}
+  </div>
+  <div class="card">
+    ${resize((width)=>scatterMedicine(mmm, {width:width}))}
+  </div>
+</div>
+
+
 
 ```sql id=scatter_results 
 WITH avg_acc as (
@@ -1617,7 +1706,7 @@ function scatterPlot1(data, {width} = {}){
 let scatter_data = scatter_results.toArray()
 ```
 
-<div class="grid grid-cols-2">
+<!-- <div class="grid grid-cols-2">
   <div class="card">
     ${scatterPlot(scatter_data, {width:700})}
 
@@ -1626,7 +1715,7 @@ let scatter_data = scatter_results.toArray()
     ${resize((width)=>scatterPlot1(scatter_data, {width}))}
 
   </div>
-</div>
+</div> -->
 
 
 <!-- Example of a better lines -->
